@@ -40,9 +40,31 @@ if torch.cuda.is_available():
         print(f'  显存: {torch.cuda.get_device_properties(i).total_memory / 1024**3:.1f} GB')
 " 2>&1 | tee -a "$LOG_FILE"
 
-# 安装vLLM
+# 尝试多种方式安装vLLM
 echo "安装vLLM..." | tee -a "$LOG_FILE"
-pip install vllm 2>&1 | tee -a "$LOG_FILE"
+
+# 方法1: 使用阿里云镜像
+echo "尝试使用阿里云镜像安装vLLM..." | tee -a "$LOG_FILE"
+if ! pip install vllm -i https://mirrors.aliyun.com/pypi/simple/ --timeout 300 2>&1 | tee -a "$LOG_FILE"; then
+    echo "阿里云镜像安装失败，尝试清华镜像..." | tee -a "$LOG_FILE"
+    
+    # 方法2: 使用清华镜像
+    if ! pip install vllm -i https://pypi.tuna.tsinghua.edu.cn/simple/ --timeout 300 2>&1 | tee -a "$LOG_FILE"; then
+        echo "清华镜像安装失败，尝试官方源..." | tee -a "$LOG_FILE"
+        
+        # 方法3: 使用官方源
+        if ! pip install vllm --timeout 600 2>&1 | tee -a "$LOG_FILE"; then
+            echo "❌ vLLM安装失败，尝试从源码安装..." | tee -a "$LOG_FILE"
+            
+            # 方法4: 从源码安装（fallback）
+            pip install wheel setuptools 2>&1 | tee -a "$LOG_FILE"
+            pip install --no-build-isolation vllm 2>&1 | tee -a "$LOG_FILE" || {
+                echo "❌ 所有vLLM安装方法都失败了" | tee -a "$LOG_FILE"
+                exit 1
+            }
+        fi
+    fi
+fi
 
 # 验证vLLM安装
 echo "验证vLLM安装..." | tee -a "$LOG_FILE"

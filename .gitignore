@@ -13,5 +13,6 @@ venv/
 
 *.yml
 
-models/# 忽略模型文件
+models/
+# 忽略模型文件
 

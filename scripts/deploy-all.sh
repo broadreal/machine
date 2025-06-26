@@ -69,6 +69,26 @@ check_requirements() {
     fi
 }
 
+# 步骤0: 配置中国大陆网络环境
+configure_china_env() {
+    echo ""
+    echo "=== 步骤0: 配置中国大陆网络环境 ===" | tee -a "$MAIN_LOG"
+    echo "针对国内网络环境进行优化配置..." | tee -a "$MAIN_LOG"
+    
+    if [ -f "$SCRIPT_DIR/configure-china-env.sh" ]; then
+        bash "$SCRIPT_DIR/configure-china-env.sh" 2>&1 | tee -a "$MAIN_LOG"
+        
+        if [ $? -eq 0 ]; then
+            echo "✅ 网络环境配置成功" | tee -a "$MAIN_LOG"
+        else
+            echo "❌ 网络环境配置失败" | tee -a "$MAIN_LOG"
+            exit 1
+        fi
+    else
+        echo "⚠️  网络环境配置脚本不存在，跳过" | tee -a "$MAIN_LOG"
+    fi
+}
+
 # 步骤1: 安装Docker
 install_docker() {
     echo ""
@@ -193,6 +213,7 @@ main() {
     
     # 执行部署步骤
     check_requirements
+    configure_china_env
     install_docker
     install_modelscope
     download_model

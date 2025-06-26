@@ -44,16 +44,23 @@ source "$ENV_DIR/bin/activate"
 echo "更新pip..."
 pip install --upgrade pip
 
-# 安装ModelScope
+# 配置国内镜像源
+echo "配置pip镜像源..."
+pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
+pip config set install.trusted-host mirrors.aliyun.com
+
+# 安装PyTorch (GPU版本) - 使用官方国内源
+echo "安装PyTorch (GPU版本)..."
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# 安装ModelScope及相关依赖
 echo "安装ModelScope..."
-pip install modelscope[nlp] -i https://pypi.douban.com/simple/
+pip install modelscope[nlp] -i https://mirrors.aliyun.com/pypi/simple/
 
 # 安装其他必要的依赖
 echo "安装其他依赖..."
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-pip install transformers
-pip install accelerate
-pip install tensorboard
+pip install transformers accelerate torch_npu -i https://mirrors.aliyun.com/pypi/simple/
+pip install tensorboard numpy pandas requests tqdm -i https://mirrors.aliyun.com/pypi/simple/
 
 # 验证安装
 echo "验证ModelScope安装..."
