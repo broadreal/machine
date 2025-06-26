@@ -90,6 +90,12 @@ deploy_full() {
     echo "是否下载Qwen3-32B模型？这将需要约60GB存储空间 (y/N): "
     read -r download_model
     if [[ "$download_model" =~ ^[Yy]$ ]]; then
+        # 激活虚拟环境后下载模型
+        if [ -d "/home/user/machine/venv" ]; then
+            log "激活虚拟环境进行模型下载..."
+            source /home/user/machine/venv/bin/activate
+        fi
+        
         if ! ./scripts/download-model.sh Qwen3-32B; then
             log_error "模型下载失败"
             exit 1

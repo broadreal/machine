@@ -38,11 +38,23 @@ mkdir -p "$(dirname "$LOG_FILE")"
 # 检查依赖
 echo "检查环境依赖..."
 
+# 检查并激活虚拟环境
+if [ -d "$ENV_DIR" ]; then
+    echo "✅ 发现虚拟环境：$ENV_DIR"
+    source "$ENV_DIR/bin/activate"
+    echo "✅ 虚拟环境已激活"
+else
+    echo "⚠️  未发现虚拟环境，使用系统Python"
+fi
+
 # 检查Python环境
 if ! command -v python &> /dev/null; then
     echo "❌ Python 未安装或不在PATH中"
+    echo "请确保Python已安装或虚拟环境已正确激活"
     exit 1
 fi
+
+echo "✅ Python环境检查通过: $(python --version 2>&1)"
 
 # 检查ModelScope和相关依赖
 echo "检查下载工具..."
@@ -100,14 +112,6 @@ if [[ $DOWNLOAD_DEPS_CHECK == *ERROR* ]]; then
 else
     echo "✅ 下载工具检查通过"
     echo "$DOWNLOAD_DEPS_CHECK" | grep "OK:"
-fi
-
-# 检查虚拟环境（可选）
-if [ -d "$ENV_DIR" ]; then
-    echo "✅ 发现虚拟环境：$ENV_DIR"
-    source "$ENV_DIR/bin/activate"
-else
-    echo "⚠️  未发现虚拟环境，使用系统Python"
 fi
 
 # 检查模型存储目录
