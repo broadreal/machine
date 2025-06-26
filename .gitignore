@@ -1,1 +1,17 @@
 venv/
+
+# 忽略日志文件
+*.log
+
+*.safetensors
+
+*.mdl
+
+*.msc
+
+*.env
+
+*.yml
+
+models/# 忽略模型文件
+
