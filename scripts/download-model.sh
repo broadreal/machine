@@ -44,25 +44,62 @@ if ! command -v python &> /dev/null; then
     exit 1
 fi
 
-# 检查并安装ModelScope
-MODELSCOPE_CHECK=$(python -c "
-try:
-    import modelscope
-    print('OK: ModelScope available')
-except ImportError:
-    print('ERROR: ModelScope not installed')
-    exit(1)
-except Exception as e:
-    print(f'ERROR: {e}')
-    exit(1)
+# 检查ModelScope和相关依赖
+echo "检查下载工具..."
+DOWNLOAD_DEPS_CHECK=$(python -c "
+import sys
+import subprocess
+
+def check_and_install_dependencies():
+    try:
+        # 检查ModelScope
+        try:
+            import modelscope
+            print('OK: ModelScope available')
+        except ImportError:
+            print('INFO: Installing ModelScope...')
+            subprocess.run([sys.executable, '-m', 'pip', 'install', 'modelscope', 
+                          '-i', 'https://mirrors.aliyun.com/pypi/simple/'], 
+                          check=True, capture_output=True)
+            import modelscope
+            print('OK: ModelScope installed successfully')
+        
+        # 检查其他依赖
+        try:
+            import requests
+            print('OK: requests available')
+        except ImportError:
+            print('INFO: Installing requests...')
+            subprocess.run([sys.executable, '-m', 'pip', 'install', 'requests'], 
+                          check=True, capture_output=True)
+            print('OK: requests installed')
+            
+        try:
+            import tqdm
+            print('OK: tqdm available')
+        except ImportError:
+            print('INFO: Installing tqdm...')
+            subprocess.run([sys.executable, '-m', 'pip', 'install', 'tqdm'], 
+                          check=True, capture_output=True)
+            print('OK: tqdm installed')
+        
+        return True
+        
+    except Exception as e:
+        print(f'ERROR: {e}')
+        return False
+
+if not check_and_install_dependencies():
+    sys.exit(1)
 " 2>&1)
 
-if [[ $MODELSCOPE_CHECK == ERROR* ]]; then
-    echo "❌ ModelScope未安装，正在安装..."
-    pip install modelscope -i https://mirrors.aliyun.com/pypi/simple/
-    echo "✅ ModelScope安装完成"
+if [[ $DOWNLOAD_DEPS_CHECK == *ERROR* ]]; then
+    echo "❌ 下载工具检查失败:"
+    echo "$DOWNLOAD_DEPS_CHECK"
+    exit 1
 else
-    echo "✅ $MODELSCOPE_CHECK"
+    echo "✅ 下载工具检查通过"
+    echo "$DOWNLOAD_DEPS_CHECK" | grep "OK:"
 fi
 
 # 检查虚拟环境（可选）

@@ -26,38 +26,70 @@ fi
 echo "检查vLLM依赖..."
 VLLM_CHECK=$(python -c "
 import sys
-try:
-    # 检查torch-npu与torch冲突
+import subprocess
+import pkg_resources
+
+def check_dependencies():
     try:
-        import torch_npu
+        # 检查torch-npu冲突
+        try:
+            result = subprocess.run(['pip', 'list'], capture_output=True, text=True)
+            if 'torch-npu' in result.stdout:
+                print('ERROR: torch-npu detected - conflicts with vLLM')
+                print('  Solution: pip uninstall torch-npu')
+                return False
+        except:
+            pass
+        
+        # 检查关键依赖
         import torch
-        print('ERROR: torch-npu conflicts with torch, please uninstall torch-npu')
-        sys.exit(1)
-    except ImportError:
-        pass  # torch-npu not installed is good
-    
-    # 检查vLLM是否可用
-    import vllm
-    from vllm import LLM
-    print('OK: vLLM dependencies verified')
-except ImportError as e:
-    print(f'ERROR: vLLM import failed - {e}')
-    sys.exit(1)
-except Exception as e:
-    print(f'ERROR: Dependency check failed - {e}')
+        print(f'OK: torch {torch.__version__}')
+        
+        import vllm
+        print(f'OK: vLLM {vllm.__version__}')
+        
+        # 检查vLLM核心组件
+        from vllm import LLM
+        from vllm.entrypoints.openai import api_server
+        print('OK: vLLM components verified')
+        
+        # 检查CUDA/计算平台
+        if torch.cuda.is_available():
+            print(f'OK: CUDA available ({torch.cuda.device_count()} GPUs)')
+        else:
+            print('WARNING: CUDA not available, using CPU mode')
+        
+        return True
+        
+    except ImportError as e:
+        print(f'ERROR: Import failed - {e}')
+        print('  Solution: pip install vllm')
+        return False
+    except Exception as e:
+        print(f'ERROR: Dependency check failed - {e}')
+        return False
+
+if not check_dependencies():
     sys.exit(1)
 " 2>&1)
 
-if [[ $VLLM_CHECK == ERROR* ]]; then
+if [[ $VLLM_CHECK == *ERROR* ]]; then
     echo "❌ vLLM依赖检查失败:"
-    echo "  $VLLM_CHECK"
+    echo "$VLLM_CHECK"
     echo ""
-    echo "解决方案："
-    echo "  pip uninstall torch-npu  # 如果存在冲突"
-    echo "  pip install vllm"
+    echo "自动修复选项:"
+    echo "  1. 自动卸载torch-npu并重新安装vLLM? (y/n)"
+    read -r auto_fix
+    if [[ "$auto_fix" =~ ^[Yy]$ ]]; then
+        echo "正在修复依赖问题..."
+        pip uninstall torch-npu -y 2>/dev/null || true
+        pip install vllm -i https://mirrors.aliyun.com/pypi/simple/
+        echo "依赖修复完成，请重新运行此脚本"
+    fi
     exit 1
 else
-    echo "✅ $VLLM_CHECK"
+    echo "✅ vLLM依赖验证通过"
+    echo "$VLLM_CHECK" | grep "OK:"
 fi
 
 # 检查虚拟环境
@@ -68,25 +100,93 @@ else
     echo "✅ 虚拟环境存在：$ENV_DIR"
 fi
 
-# 检查模型路径
+# 检查并验证模型路径
+echo "检查模型..."
 if [ ! -d "$MODEL_PATH" ]; then
     echo "❌ 模型不存在：$MODEL_PATH"
     echo ""
-    echo "解决方案："
-    echo "  1. 手动下载模型到指定路径"
-    echo "  2. 运行模型下载脚本："
-    echo "     bash /home/user/machine/scripts/download-model.sh Qwen3-32B"
-    echo "  3. 修改启动脚本使用其他已存在的模型"
-    exit 1
+    echo "可用的解决方案："
+    echo "  1. 自动下载模型 (推荐)"
+    echo "  2. 手动指定其他模型路径"
+    echo "  3. 退出并手动下载"
+    echo ""
+    echo "选择操作 (1/2/3): "
+    read -r choice
+    
+    case "$choice" in
+        1)
+            echo "正在下载模型..."
+            if [ -f "/home/user/machine/scripts/download-model.sh" ]; then
+                bash /home/user/machine/scripts/download-model.sh Qwen3-32B
+                if [ $? -eq 0 ] && [ -d "$MODEL_PATH" ]; then
+                    echo "✅ 模型下载完成"
+                else
+                    echo "❌ 模型下载失败"
+                    exit 1
+                fi
+            else
+                echo "❌ 下载脚本不存在"
+                exit 1
+            fi
+            ;;
+        2)
+            echo "请输入模型路径："
+            read -r custom_model_path
+            if [ -d "$custom_model_path" ]; then
+                MODEL_PATH="$custom_model_path"
+                echo "✅ 使用自定义模型路径：$MODEL_PATH"
+            else
+                echo "❌ 指定的模型路径不存在"
+                exit 1
+            fi
+            ;;
+        3)
+            echo "请先下载模型后再运行此脚本"
+            echo "  bash /home/user/machine/scripts/download-model.sh Qwen3-32B"
+            exit 1
+            ;;
+        *)
+            echo "无效选择，退出"
+            exit 1
+            ;;
+    esac
 else
     echo "✅ 模型路径存在：$MODEL_PATH"
-    # 检查模型文件完整性
-    if [ ! -f "$MODEL_PATH/config.json" ]; then
-        echo "⚠️  模型可能不完整：缺少 config.json"
+fi
+
+# 验证模型文件完整性
+echo "验证模型文件..."
+model_valid=true
+
+if [ ! -f "$MODEL_PATH/config.json" ]; then
+    echo "❌ 缺少配置文件：config.json"
+    model_valid=false
+fi
+
+# 检查模型权重文件
+if [ ! -f "$MODEL_PATH/pytorch_model.bin" ] && [ ! -f "$MODEL_PATH/model.safetensors" ] && [ ! -f "$MODEL_PATH/pytorch_model-00001-of-*.bin" ]; then
+    echo "❌ 缺少模型权重文件"
+    model_valid=false
+fi
+
+if [ ! -f "$MODEL_PATH/tokenizer.json" ] && [ ! -f "$MODEL_PATH/tokenizer_config.json" ]; then
+    echo "❌ 缺少tokenizer文件"
+    model_valid=false
+fi
+
+if [ "$model_valid" = false ]; then
+    echo ""
+    echo "模型文件不完整，建议重新下载："
+    echo "  bash /home/user/machine/scripts/download-model.sh Qwen3-32B"
+    echo ""
+    echo "是否继续启动? (y/N): "
+    read -r continue_anyway
+    if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
+        echo "退出启动"
+        exit 1
     fi
-    if [ ! -f "$MODEL_PATH/pytorch_model.bin" ] && [ ! -f "$MODEL_PATH/model.safetensors" ]; then
-        echo "⚠️  模型可能不完整：缺少模型权重文件"
-    fi
+else
+    echo "✅ 模型文件验证通过"
 fi
 
 echo "=== 启动vLLM服务 ==="

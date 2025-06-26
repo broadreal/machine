@@ -13,59 +13,103 @@ fi
 
 # 检查vLLM依赖冲突
 echo "检查vLLM依赖..."
-TORCH_NPU_CHECK=$(python -c "
+DEPENDENCY_CHECK=$(python -c "
 import sys
-try:
-    import torch_npu
-    import torch
-    print('CONFLICT: torch-npu and torch may have version conflicts')
-    sys.exit(1)
-except ImportError as e:
-    if 'torch_npu' in str(e):
-        print('OK: torch-npu not installed (避免冲突)')
-    else:
-        print('WARNING: torch may not be properly installed')
-        sys.exit(1)
-except Exception as e:
-    print(f'ERROR: {e}')
-    sys.exit(1)
-" 2>/dev/null)
+import subprocess
 
-echo "  $TORCH_NPU_CHECK"
+def check_package_conflicts():
+    try:
+        # 检查torch-npu是否存在
+        result = subprocess.run(['pip', 'list'], capture_output=True, text=True)
+        pip_list = result.stdout
+        
+        has_torch_npu = 'torch-npu' in pip_list
+        has_torch = 'torch' in pip_list and 'torch-npu' not in pip_list.split('torch')[1].split('\n')[0]
+        
+        if has_torch_npu:
+            print('ERROR: torch-npu detected, this may conflict with vLLM')
+            print('  Solution: pip uninstall torch-npu')
+            return False
+            
+        if not has_torch:
+            print('WARNING: torch not found in pip list')
+            return False
+            
+        # 尝试导入vLLM核心组件
+        import torch
+        print(f'OK: torch {torch.__version__} available')
+        
+        import vllm
+        print(f'OK: vLLM {vllm.__version__} available')
+        
+        from vllm import LLM
+        from vllm.entrypoints.openai import api_server
+        print('OK: vLLM core components can be imported')
+        
+        return True
+        
+    except ImportError as e:
+        print(f'ERROR: Import failed - {e}')
+        return False
+    except Exception as e:
+        print(f'ERROR: Dependency check failed - {e}')
+        return False
 
-# 检查vLLM是否可以正常导入
-VLLM_IMPORT_CHECK=$(python -c "
-try:
-    import vllm
-    from vllm import LLM
-    print('OK: vLLM can be imported successfully')
-except ImportError as e:
-    print(f'ERROR: vLLM import failed - {e}')
-    exit(1)
-except Exception as e:
-    print(f'ERROR: vLLM check failed - {e}')
-    exit(1)
+if not check_package_conflicts():
+    sys.exit(1)
 " 2>&1)
 
-if [[ $VLLM_IMPORT_CHECK == ERROR* ]]; then
-    echo "❌ vLLM依赖检查失败:"
-    echo "  $VLLM_IMPORT_CHECK"
+if [[ $DEPENDENCY_CHECK == *ERROR* ]]; then
+    echo "❌ 依赖检查失败:"
+    echo "$DEPENDENCY_CHECK"
     echo ""
     echo "建议解决方案："
-    echo "  1. 检查是否存在torch-npu与torch冲突: pip list | grep torch"
-    echo "  2. 如有冲突，卸载torch-npu: pip uninstall torch-npu"
-    echo "  3. 重新安装vLLM: pip install vllm"
+    echo "  1. 卸载冲突包: pip uninstall torch-npu"
+    echo "  2. 重新安装vLLM: pip install vllm"
+    echo "  3. 验证安装: python -c 'import vllm; print(vllm.__version__)'"
     exit 1
 else
-    echo "✅ $VLLM_IMPORT_CHECK"
+    echo "✅ 依赖检查通过"
+    echo "$DEPENDENCY_CHECK" | grep "OK:"
+fi
+
+# 检查模型和服务状态
+echo ""
+echo "检查模型和服务..."
+
+# 定义预期的模型路径
+EXPECTED_MODEL_PATH="/home/user/machine/models/Qwen/Qwen3-32B"
+
+# 检查模型是否存在
+if [ ! -d "$EXPECTED_MODEL_PATH" ]; then
+    echo "❌ 预期模型不存在: $EXPECTED_MODEL_PATH"
+    echo "   请运行: ./scripts/download-model.sh Qwen3-32B"
+    echo ""
 fi
 
 # 检查进程
 PIDS=$(pgrep -f "vllm.entrypoints.openai.api_server" || true)
 if [ -n "$PIDS" ]; then
     echo "✅ vLLM服务正在运行 (PID: $PIDS)"
+    
+    # 获取运行时使用的模型路径
+    RUNNING_MODEL=$(ps -fp $PIDS | grep -o '\-\-model [^ ]*' | cut -d' ' -f2 || echo "unknown")
+    if [ "$RUNNING_MODEL" != "unknown" ]; then
+        echo "   使用模型: $RUNNING_MODEL"
+        if [ "$RUNNING_MODEL" != "$EXPECTED_MODEL_PATH" ]; then
+            echo "   ⚠️  运行模型与预期不符"
+        fi
+    fi
 else
     echo "❌ vLLM服务未运行"
+    if [ -d "$EXPECTED_MODEL_PATH" ]; then
+        echo "   模型存在，可以启动服务: ./scripts/start-vllm.sh"
+    else
+        echo "   需要先下载模型: ./scripts/download-model.sh Qwen3-32B"
+    fi
+    echo ""
+    echo "如需查看启动日志:"
+    echo "   tail -f /home/user/machine/logs/vllm-service.log"
     exit 1
 fi
 
