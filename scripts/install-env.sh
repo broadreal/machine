@@ -228,17 +228,38 @@ install_docker() {
                     gnupg \
                     lsb-release 2>&1 | tee -a "$LOG_FILE"
                 
-                # 添加Docker官方GPG密钥
-                curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                # 使用阿里云镜像源（更稳定）
+                log "使用阿里云Docker镜像源..."
                 
-                # 设置稳定版仓库
+                # 添加阿里云Docker GPG密钥（多种方式尝试）
+                if ! curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg; then
+                    log_warn "阿里云GPG密钥下载失败，尝试备用方案..."
+                    
+                    # 备用方案1：使用清华镜像
+                    if ! curl -fsSL https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg; then
+                        log_warn "清华镜像GPG密钥下载失败，尝试官方源..."
+                        
+                        # 备用方案2：使用官方源
+                        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                    fi
+                fi
+                
+                # 添加Docker软件源（优先使用阿里云）
                 echo \
-                  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+                  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://mirrors.aliyun.com/docker-ce/linux/ubuntu \
                   $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
                 
+                # 如果阿里云源失败，切换到清华源
+                if ! sudo apt-get update 2>&1 | tee -a "$LOG_FILE"; then
+                    log_warn "阿里云Docker源失败，切换到清华源..."
+                    echo \
+                      "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu \
+                      $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                    sudo apt-get update 2>&1 | tee -a "$LOG_FILE"
+                fi
+                
                 # 安装Docker
-                sudo apt-get update 2>&1 | tee -a "$LOG_FILE"
-                sudo apt-get install -y docker-ce docker-ce-cli containerd.io 2>&1 | tee -a "$LOG_FILE"
+                sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>&1 | tee -a "$LOG_FILE"
                 ;;
             centos|rhel|fedora)
                 log "在CentOS/RHEL/Fedora系统上安装Docker..."
