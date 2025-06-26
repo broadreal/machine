@@ -64,11 +64,19 @@ show_help() {
 # 激活虚拟环境
 activate_venv() {
     if [ -d "$VENV_DIR" ]; then
+        log "激活虚拟环境: $VENV_DIR"
         source "$VENV_DIR/bin/activate"
-        return 0
+        
+        # 验证激活是否成功
+        if [ "$VIRTUAL_ENV" = "$VENV_DIR" ]; then
+            return 0
+        else
+            log_error "虚拟环境激活失败"
+            return 1
+        fi
     else
         log_error "虚拟环境不存在: $VENV_DIR"
-        echo "请先运行: $0 setup"
+        echo "请先运行: ./scripts/install-env.sh all"
         return 1
     fi
 }
@@ -183,23 +191,26 @@ check_service() {
 setup_vllm() {
     log "${BLUE}=== vLLM 环境设置 ===${NC}"
     
-    # 检查Python
-    if ! command -v python &> /dev/null; then
-        log_error "Python 未安装"
-        exit 1
-    fi
-    
-    local python_version=$(python --version 2>&1)
-    log_info "$python_version"
-    
-    # 激活虚拟环境
+    # 先检查虚拟环境是否存在
     if [ ! -d "$VENV_DIR" ]; then
         log_error "虚拟环境不存在: $VENV_DIR"
         echo "请先运行 install-env.sh 安装环境"
         exit 1
     fi
     
-    activate_venv
+    # 激活虚拟环境
+    if ! activate_venv; then
+        exit 1
+    fi
+    
+    # 在虚拟环境中检查Python
+    if ! command -v python &> /dev/null; then
+        log_error "Python 未安装或虚拟环境有问题"
+        exit 1
+    fi
+    
+    local python_version=$(python --version 2>&1)
+    log_info "$python_version"
     
     # 检查并修复依赖
     if ! check_dependencies; then
